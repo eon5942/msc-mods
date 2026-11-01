@@ -8,13 +8,15 @@ No menu, no dependencies beyond the mod loader, nothing to configure. Press `Y`,
 |---|---|
 | Mod name | Quick Save (Y) |
 | Mod ID | `QuickSave` |
-| Version | 2.2 |
+| Version | 2.3 |
 | Author | eon |
 | Works with | My Summer Car (MSCLoader) |
 
 ## How it works
 
-The mod finds the game's save FSM (the `SAVEGAME` PlayMaker event) and broadcasts it on keypress. It does the same thing the in-game save triggers do, so saves are fully compatible with normal saves.
+The mod triggers the game's own save by broadcasting the `SAVEGAME` PlayMaker event on keypress, exactly like the in-game save, so saves are fully compatible with normal saves.
+
+MSC only ever saves when quitting, so broadcasting `SAVEGAME` mid-game leaves every object's state machine stuck in a terminal "Save" state with no exit. That is what broke eating/drinking and the player position in earlier versions. This version records each state machine's state before saving and restores it a moment later, so the game keeps running as if nothing happened.
 
 ---
 
@@ -65,11 +67,7 @@ There are no settings and no other keys. The key is fixed to `Y` in this build.
 1. Launch the game and open the MSCLoader mod menu.
 2. You should see **Quick Save (Y)** listed under Mods, enabled.
 
-If you want to check it from the file system, press `Y` in-game and confirm a new save appears, or look at `output_log.txt` in the game folder for the line:
-
-```
-QuickSave: broadcast SAVEGAME
-```
+If you want to check it from the file system, press `Y` in-game and confirm the save files (`defaultES2File.txt`, `items.txt`) in the game's save folder were just updated.
 
 ---
 
@@ -81,7 +79,6 @@ QuickSave: broadcast SAVEGAME
 
 **Mod listed but saving does nothing**
 - Make sure you are past the main menu and actually in-game. The save FSM only exists during gameplay.
-- Check `output_log.txt` for `QuickSave:` messages or errors.
 
 **Errors in the log (`NullReferenceException`, etc.)**
 - This build targets the current MSCLoader API. If the game updated recently, the mod may need a rebuild — re-download the latest from here.
@@ -90,8 +87,17 @@ QuickSave: broadcast SAVEGAME
 
 ## Building from source
 
-Source is not published here yet. If you have the project and want to build it:
+The full source is `QuickSave.cs`. Build it against the game's own assemblies (the DLLs in `My Summer Car\mysummercar_Data\Managed`) with Mono's `mcs`:
 
-1. Open the solution in Visual Studio (or build with `msbuild`).
-2. Reference the MSCLoader assemblies (`MSCLoader.dll`, `MSCLoader.References.dll`) from your MSCLoader install's `Mods\References` folder.
-3. Set the output to `QuickSave.dll` and copy it into `Mods\`.
+```
+mcs -nostdlib -target:library -out:QuickSave.dll \
+  -r:"<game>/mysummercar_Data/Managed/mscorlib.dll" \
+  -r:"<game>/mysummercar_Data/Managed/System.dll" \
+  -r:"<game>/mysummercar_Data/Managed/System.Core.dll" \
+  -r:"<game>/mysummercar_Data/Managed/UnityEngine.dll" \
+  -r:"<game>/mysummercar_Data/Managed/MSCLoader.dll" \
+  -r:"<game>/mysummercar_Data/Managed/PlayMaker.dll" \
+  QuickSave.cs
+```
+
+`<game>` is your `My Summer Car` install folder. Copy the resulting `QuickSave.dll` into `Mods\`.
