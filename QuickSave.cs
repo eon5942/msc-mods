@@ -17,7 +17,7 @@ public class QuickSave : Mod
     public override string ID { get { return "QuickSave"; } }
     public override string Name { get { return "Quick Save (Y)"; } }
     public override string Author { get { return "eon"; } }
-    public override string Version { get { return "2.3"; } }
+    public override string Version { get { return "2.4"; } }
     public override string Description { get { return "Press Y to save"; } }
     public override Game SupportedGames { get { return Game.MySummerCar; } }
 
@@ -51,6 +51,8 @@ public class QuickSave : Mod
         foreach (PlayMakerFSM f in UnityEngine.Object.FindObjectsOfType<PlayMakerFSM>())
         {
             if (f == null || f.Fsm == null)
+                continue;
+            if (f.Fsm.States == null || f.Fsm.States.Length == 0)
                 continue;
             string state = f.ActiveStateName;
             if (string.IsNullOrEmpty(state))
@@ -115,6 +117,8 @@ public class QuickSave : Mod
         {
             PlayMakerFSM f = kv.Key;
             if (f == null || f.Fsm == null)
+                continue;
+            if (f.Fsm.States == null || f.Fsm.States.Length == 0)
                 continue;
             if (f.ActiveStateName == kv.Value)
                 continue;
