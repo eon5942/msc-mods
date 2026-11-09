@@ -8,17 +8,23 @@ using HutongGames.PlayMaker;
 public class QuickSave : Mod
 {
     private const string HoldState = "(QuickSave)";
+    private const float RestoreDelay = 2.5f;
 
     private List<KeyValuePair<PlayMakerFSM, string>> restore;
     private Dictionary<PlayMakerFSM, string> afterSave;
+    private List<FsmTransition> heldTransitions;
+    private List<string> heldTargets;
     private float restoreAt;
     private MethodInfo switchState;
+    private FieldInfo originalMeshData;
+    private FieldInfo permaVerts;
+    private FieldInfo colliderVerts;
 
     public override string ID { get { return "QuickSave"; } }
     public override string Name { get { return "Quick Save (Y)"; } }
     public override string Author { get { return "eon"; } }
-    public override string Version { get { return "2.4"; } }
-    public override string Description { get { return "Press Y to save"; } }
+    public override string Version { get { return "2.6"; } }
+    public override string Description { get { return "Press Y to save, B to fix body"; } }
     public override Game SupportedGames { get { return Game.MySummerCar; } }
 
     public override void ModSetup()
@@ -28,25 +34,81 @@ public class QuickSave : Mod
 
     private void Update()
     {
-        if (restore != null && Time.realtimeSinceStartup >= restoreAt)
+        if (restore != null)
         {
-            Restore();
+            if (Time.realtimeSinceStartup >= restoreAt)
+                Restore();
             return;
         }
 
         if (Input.GetKeyDown(KeyCode.Y) || Input.GetKeyDown(KeyCode.Z))
             Save();
+
+        if (Input.GetKeyDown(KeyCode.B))
+            RepairBody();
+    }
+
+    private void RepairBody()
+    {
+        foreach (CarDamage cd in UnityEngine.Object.FindObjectsOfType<CarDamage>())
+        {
+            if (cd == null)
+                continue;
+
+            MeshFilter[] mf = cd.meshFilters;
+            if (mf == null)
+                continue;
+
+            if (originalMeshData == null)
+                originalMeshData = typeof(CarDamage).GetField("originalMeshData", BindingFlags.NonPublic | BindingFlags.Instance);
+            Array original = originalMeshData == null ? null : (Array)originalMeshData.GetValue(cd);
+            if (original == null)
+                continue;
+
+            for (int i = 0; i < mf.Length && i < original.Length; i++)
+            {
+                if (mf[i] == null || mf[i].mesh == null)
+                    continue;
+                object pvc = original.GetValue(i);
+                if (pvc == null)
+                    continue;
+                if (permaVerts == null)
+                    permaVerts = pvc.GetType().GetField("permaVerts");
+                Vector3[] verts = permaVerts == null ? null : (Vector3[])permaVerts.GetValue(pvc);
+                if (verts == null)
+                    continue;
+                mf[i].mesh.vertices = verts;
+                mf[i].mesh.RecalculateNormals();
+                mf[i].mesh.RecalculateBounds();
+            }
+
+            MeshCollider mc = cd.meshCollider;
+            if (mc != null && mc.sharedMesh != null)
+            {
+                if (colliderVerts == null)
+                    colliderVerts = typeof(CarDamage).GetField("colliderVerts", BindingFlags.NonPublic | BindingFlags.Instance);
+                Vector3[] cv = colliderVerts == null ? null : (Vector3[])colliderVerts.GetValue(cd);
+                if (cv != null)
+                {
+                    Mesh m = new Mesh();
+                    m.vertices = cv;
+                    m.triangles = mc.sharedMesh.triangles;
+                    m.RecalculateNormals();
+                    m.RecalculateBounds();
+                    mc.sharedMesh = m;
+                }
+            }
+        }
     }
 
     private void Save()
     {
-        if (restore != null)
-            return;
         if (Application.loadedLevelName != "GAME")
             return;
 
         List<KeyValuePair<PlayMakerFSM, string>> states = new List<KeyValuePair<PlayMakerFSM, string>>();
-        PlayMakerFSM setup = null;
+        List<FsmTransition> held = new List<FsmTransition>();
+        List<string> heldTo = new List<string>();
 
         foreach (PlayMakerFSM f in UnityEngine.Object.FindObjectsOfType<PlayMakerFSM>())
         {
@@ -58,77 +120,81 @@ public class QuickSave : Mod
             if (string.IsNullOrEmpty(state))
                 continue;
 
-            bool listens = false;
-            FsmTransition[] transitions = f.Fsm.GlobalTransitions;
-            if (transitions != null)
-                foreach (FsmTransition t in transitions)
-                    if (t != null && t.EventName == "SAVEGAME") { listens = true; break; }
-            if (!listens)
+            if (!ListensForSave(f))
                 continue;
 
-            if (setup == null && f.FsmName == "WaitPlayer" && f.gameObject != null &&
-                f.gameObject.name == "Setup Game" && (state == "Activate game" || state == "Save game"))
-                setup = f;
-            else
-                states.Add(new KeyValuePair<PlayMakerFSM, string>(f, state));
-        }
+            states.Add(new KeyValuePair<PlayMakerFSM, string>(f, state));
 
-        FsmTransition held = null;
-        string heldTo = null;
-        if (setup != null)
-        {
-            FsmState sg = setup.Fsm.GetState("Save game");
+            FsmState sg = f.Fsm.GetState("Save game");
             if (sg != null && sg.Transitions != null)
                 foreach (FsmTransition t in sg.Transitions)
-                    if (t != null && t.EventName == "FINISHED") { held = t; heldTo = t.ToState; break; }
-            if (held == null)
-            {
-                states.Add(new KeyValuePair<PlayMakerFSM, string>(setup, setup.ActiveStateName));
-                setup = null;
-            }
-            else
-            {
-                held.ToState = HoldState;
-            }
+                    if (t != null && t.EventName == "FINISHED")
+                    {
+                        held.Add(t);
+                        heldTo.Add(t.ToState);
+                        t.ToState = HoldState;
+                        break;
+                    }
         }
 
-        try
-        {
-            PlayMakerFSM.BroadcastEvent("SAVEGAME");
-        }
-        finally
-        {
-            if (held != null)
-                held.ToState = heldTo;
-        }
+        PlayMakerFSM.BroadcastEvent("SAVEGAME");
 
-        afterSave = new Dictionary<PlayMakerFSM, string>();
+        afterSave = new Dictionary<PlayMakerFSM, string>(states.Count);
         foreach (KeyValuePair<PlayMakerFSM, string> kv in states)
             if (kv.Key != null)
                 afterSave[kv.Key] = kv.Key.ActiveStateName;
 
+        heldTransitions = held;
+        heldTargets = heldTo;
         restore = states;
-        restoreAt = Time.realtimeSinceStartup + 2.5f;
+        restoreAt = Time.realtimeSinceStartup + RestoreDelay;
+    }
+
+    private static bool ListensForSave(PlayMakerFSM f)
+    {
+        FsmTransition[] transitions = f.Fsm.GlobalTransitions;
+        if (transitions == null)
+            return false;
+        for (int i = 0; i < transitions.Length; i++)
+        {
+            FsmTransition t = transitions[i];
+            if (t != null && t.EventName == "SAVEGAME")
+                return true;
+        }
+        return false;
     }
 
     private void Restore()
     {
-        foreach (KeyValuePair<PlayMakerFSM, string> kv in restore)
+        if (restore != null)
         {
-            PlayMakerFSM f = kv.Key;
-            if (f == null || f.Fsm == null)
-                continue;
-            if (f.Fsm.States == null || f.Fsm.States.Length == 0)
-                continue;
-            if (f.ActiveStateName == kv.Value)
-                continue;
-            string saved;
-            if (afterSave != null && afterSave.TryGetValue(f, out saved) && f.ActiveStateName != saved)
-                continue;
-            SetState(f, kv.Value);
+            foreach (KeyValuePair<PlayMakerFSM, string> kv in restore)
+            {
+                PlayMakerFSM f = kv.Key;
+                if (f == null || f.Fsm == null)
+                    continue;
+                if (f.Fsm.States == null || f.Fsm.States.Length == 0)
+                    continue;
+                if (f.ActiveStateName == kv.Value)
+                    continue;
+                string saved;
+                if (afterSave != null && afterSave.TryGetValue(f, out saved) && f.ActiveStateName != saved)
+                    continue;
+                SetState(f, kv.Value);
+            }
         }
+
+        if (heldTransitions != null)
+        {
+            for (int i = 0; i < heldTransitions.Count; i++)
+                if (heldTransitions[i] != null)
+                    heldTransitions[i].ToState = heldTargets[i];
+        }
+
         restore = null;
         afterSave = null;
+        heldTransitions = null;
+        heldTargets = null;
     }
 
     private void SetState(PlayMakerFSM f, string state)

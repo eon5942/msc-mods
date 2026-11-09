@@ -8,7 +8,7 @@ No menu, no dependencies beyond the mod loader, nothing to configure. Press `Y`,
 |---|---|
 | Mod name | Quick Save (Y) |
 | Mod ID | `QuickSave` |
-| Version | 2.3 |
+| Version | 2.6 |
 | Author | eon |
 | Works with | My Summer Car (MSCLoader) |
 
@@ -16,7 +16,7 @@ No menu, no dependencies beyond the mod loader, nothing to configure. Press `Y`,
 
 The mod triggers the game's own save by broadcasting the `SAVEGAME` PlayMaker event on keypress, exactly like the in-game save, so saves are fully compatible with normal saves.
 
-MSC only ever saves when quitting, so broadcasting `SAVEGAME` mid-game leaves every object's state machine stuck in a terminal "Save" state with no exit. That is what broke eating/drinking and the player position in earlier versions. This version records each state machine's state before saving and restores it a moment later, so the game keeps running as if nothing happened.
+MSC only ever saves when quitting, so broadcasting `SAVEGAME` mid-game kicks every object's state machine into a save-then-reload flow (`Save game` -> `Check data` -> `Load game`) that reloads transforms and freezes parts (`isKinematic`), which is what detached/froze the car body. This version records each state machine's state before saving, holds the `Save game` -> `FINISHED` transition on every FSM so the reload flow never runs, then restores each FSM a moment later — the game keeps running as if nothing happened.
 
 ---
 
@@ -58,9 +58,9 @@ The folder may be elsewhere if you installed Steam to a different drive — just
 
 ## 3. Use it
 
-Press **Y** to save. That's it.
+Press **Y** to save. Press **B** to fix the body (un-dent the bodywork after a crash, so you can install panels).
 
-There are no settings and no other keys. The key is fixed to `Y` in this build.
+There are no settings. Keys are fixed to `Y` and `B` in this build.
 
 ## 4. Verify it's loaded
 
@@ -97,6 +97,7 @@ mcs -nostdlib -target:library -out:QuickSave.dll \
   -r:"<game>/mysummercar_Data/Managed/UnityEngine.dll" \
   -r:"<game>/mysummercar_Data/Managed/MSCLoader.dll" \
   -r:"<game>/mysummercar_Data/Managed/PlayMaker.dll" \
+  -r:"<game>/mysummercar_Data/Managed/Assembly-CSharp.dll" \
   QuickSave.cs
 ```
 
