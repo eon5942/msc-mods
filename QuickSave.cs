@@ -16,14 +16,13 @@ public class QuickSave : Mod
     private List<string> heldTargets;
     private float restoreAt;
     private MethodInfo switchState;
-    private FieldInfo originalMeshData;
-    private FieldInfo permaVerts;
-    private FieldInfo colliderVerts;
+    private FieldInfo baseVerticesField;
+    private FieldInfo baseColorsField;
 
     public override string ID { get { return "QuickSave"; } }
     public override string Name { get { return "Quick Save (Y)"; } }
     public override string Author { get { return "eon"; } }
-    public override string Version { get { return "2.6"; } }
+    public override string Version { get { return "2.7"; } }
     public override string Description { get { return "Press Y to save, B to fix body"; } }
     public override Game SupportedGames { get { return Game.MySummerCar; } }
 
@@ -50,54 +49,31 @@ public class QuickSave : Mod
 
     private void RepairBody()
     {
-        foreach (CarDamage cd in UnityEngine.Object.FindObjectsOfType<CarDamage>())
+        foreach (Deformable d in UnityEngine.Object.FindObjectsOfType<Deformable>())
         {
-            if (cd == null)
+            if (d == null || d.meshFilter == null)
                 continue;
 
-            MeshFilter[] mf = cd.meshFilters;
-            if (mf == null)
+            Mesh m = d.meshFilter.mesh;
+            if (m == null)
                 continue;
 
-            if (originalMeshData == null)
-                originalMeshData = typeof(CarDamage).GetField("originalMeshData", BindingFlags.NonPublic | BindingFlags.Instance);
-            Array original = originalMeshData == null ? null : (Array)originalMeshData.GetValue(cd);
-            if (original == null)
+            if (baseVerticesField == null)
+                baseVerticesField = typeof(Deformable).GetField("baseVertices", BindingFlags.NonPublic | BindingFlags.Instance);
+            Vector3[] baseVerts = baseVerticesField == null ? null : (Vector3[])baseVerticesField.GetValue(d);
+            if (baseVerts == null || baseVerts.Length == 0)
                 continue;
 
-            for (int i = 0; i < mf.Length && i < original.Length; i++)
-            {
-                if (mf[i] == null || mf[i].mesh == null)
-                    continue;
-                object pvc = original.GetValue(i);
-                if (pvc == null)
-                    continue;
-                if (permaVerts == null)
-                    permaVerts = pvc.GetType().GetField("permaVerts");
-                Vector3[] verts = permaVerts == null ? null : (Vector3[])permaVerts.GetValue(pvc);
-                if (verts == null)
-                    continue;
-                mf[i].mesh.vertices = verts;
-                mf[i].mesh.RecalculateNormals();
-                mf[i].mesh.RecalculateBounds();
-            }
+            m.vertices = baseVerts;
 
-            MeshCollider mc = cd.meshCollider;
-            if (mc != null && mc.sharedMesh != null)
-            {
-                if (colliderVerts == null)
-                    colliderVerts = typeof(CarDamage).GetField("colliderVerts", BindingFlags.NonPublic | BindingFlags.Instance);
-                Vector3[] cv = colliderVerts == null ? null : (Vector3[])colliderVerts.GetValue(cd);
-                if (cv != null)
-                {
-                    Mesh m = new Mesh();
-                    m.vertices = cv;
-                    m.triangles = mc.sharedMesh.triangles;
-                    m.RecalculateNormals();
-                    m.RecalculateBounds();
-                    mc.sharedMesh = m;
-                }
-            }
+            if (baseColorsField == null)
+                baseColorsField = typeof(Deformable).GetField("baseColors", BindingFlags.NonPublic | BindingFlags.Instance);
+            Color32[] baseCols = baseColorsField == null ? null : (Color32[])baseColorsField.GetValue(d);
+            if (baseCols != null && baseCols.Length > 0)
+                m.colors32 = baseCols;
+
+            m.RecalculateNormals();
+            m.RecalculateBounds();
         }
     }
 

@@ -8,7 +8,7 @@ No menu, no dependencies beyond the mod loader, nothing to configure. Press `Y`,
 |---|---|
 | Mod name | Quick Save (Y) |
 | Mod ID | `QuickSave` |
-| Version | 2.6 |
+| Version | 2.7 |
 | Author | eon |
 | Works with | My Summer Car (MSCLoader) |
 
